@@ -352,4 +352,180 @@ final class ReaderSessionTests: XCTestCase {
         for child in view.subviews { result += descendants(of: child, type: type) }
         return result
     }
+
+    func testUndoThenDrawingIgnoresOldCanvasCallbacksForPenAndMarker() async throws {
+        for ink in [PKInk.InkType.pen, .marker] {
+            let session = await open()
+            let overlay = DrawingOverlay(page: 0, size: CGSize(width: 400, height: 600), session: session)
+            session.displayDrawing = { _, drawing in overlay.setDrawing(drawing) }
+            session.finishStrokes = { overlay.finishStroke() }
+            let initial = session.drawing(for: 0).strokes.count
+            for color in [UIColor.red, .blue, .green] {
+                overlay.canvasViewDidBeginUsingTool(overlay.canvas)
+                overlay.canvas.drawing = PKDrawing(strokes: overlay.canvas.drawing.strokes + stroke(color: color, ink: ink).strokes)
+                overlay.canvasViewDrawingDidChange(overlay.canvas)
+                overlay.canvasViewDidEndUsingTool(overlay.canvas)
+                overlay.finishStroke()
+            }
+            let old = overlay.canvas
+            session.undo()
+            XCTAssertFalse(old === overlay.canvas)
+            XCTAssertNil(old.delegate)
+            XCTAssertEqual(session.drawing(for: 0).strokes.count, initial + 2)
+            // A late pen pressure callback and even a begin/end callback from the retired canvas.
+            overlay.canvasViewDrawingDidChange(old)
+            overlay.canvasViewDidBeginUsingTool(old)
+            overlay.canvasViewDidEndUsingTool(old)
+            XCTAssertEqual(session.drawing(for: 0).strokes.count, initial + 2)
+            let current = overlay.canvas
+            overlay.canvasViewDidBeginUsingTool(current)
+            current.drawing = PKDrawing(strokes: current.drawing.strokes + stroke(color: .purple, ink: ink).strokes)
+            overlay.canvasViewDrawingDidChange(current)
+            overlay.canvasViewDidEndUsingTool(current)
+            overlay.finishStroke()
+            XCTAssertEqual(session.drawing(for: 0).strokes.count, initial + 3)
+            XCTAssertFalse(session.canRedo)
+            XCTAssertEqual(session.drawing(for: 0).strokes.last?.ink.color, UIColor.purple)
+            session.undo()
+            session.redo()
+            XCTAssertEqual(session.drawing(for: 0).strokes.count, initial + 3)
+            session.flush()
+            await waitFor(session) { !$0.hasUnsavedChanges && !$0.isSaving }
+            let reopened = await open()
+            XCTAssertEqual(reopened.drawing(for: 0).strokes.count, initial + 3)
+            reopened.flush()
+            await waitFor(reopened) { !$0.hasUnsavedChanges && !$0.isSaving }
+            session.displayDrawing = nil
+            session.finishStrokes = nil
+        }
+    }
+
+    func testOpeningStaleListDocumentLoadsLatestPositionAndClosingFreezesIt() async throws {
+        let stale = document!
+        var latest = stale
+        latest.position = .init(page: 1, x: 40, y: 250)
+        try repository.saveMetadata(latest)
+        // open() still receives the original page-zero value held by the list.
+        let session = await open()
+        XCTAssertEqual(session.document.position, latest.position)
+        session.capturePosition = { session.rememberPosition(.init(page: 1, x: 50, y: 200)) }
+        session.prepareToClose()
+        let final = session.document.position
+        session.rememberPosition(.init(page: 0))
+        session.flush()
+        await waitFor(session) { !$0.hasUnsavedChanges && !$0.isSaving }
+        XCTAssertEqual(try repository.loadDocument(id: stale.id).position, final)
+        session.capturePosition = nil
+        let reopened = await open()
+        XCTAssertEqual(reopened.document.position, final)
+        reopened.flush()
+        await waitFor(reopened) { !$0.hasUnsavedChanges && !$0.isSaving }
+    }
+
+    func testClosingSaveFailureCanResumeEditingAndRetry() async throws {
+        final class Switch: @unchecked Sendable { var fail = true }
+        let failure = Switch()
+        let failing = try DocumentRepository(root: repository.root) { data, url in
+            if failure.fail { throw CocoaError(.fileWriteOutOfSpace) }
+            try data.write(to: url, options: .atomic)
+        }
+        let session = await open(repository: failing)
+        session.drawingChanged(stroke(), page: 0)
+        session.prepareToClose()
+        await waitFor(session) { $0.saveError != nil }
+        XCTAssertTrue(session.isClosing)
+        session.cancelClosing()
+        XCTAssertTrue(session.writable)
+        session.rememberPosition(.init(page: 1))
+        failure.fail = false
+        session.prepareToClose()
+        await waitFor(session) { !$0.hasUnsavedChanges && !$0.isSaving }
+        XCTAssertNotNil(try repository.loadAnnotations(for: document).drawings[0])
+        XCTAssertEqual(try repository.loadDocument(id: document.id).position.page, 1)
+    }
+
+    func testImportNavigatesOnceAndFailureDoesNotNavigate() async throws {
+        let model = LibraryModel(repository: repository)
+        let done = expectation(description: "Imported document becomes destination")
+        var fulfilled = false
+        let token = model.$navigationPath.sink { path in
+            if !path.isEmpty && !fulfilled { fulfilled = true; done.fulfill() }
+        }
+        let source = repository.sourceURL(for: document.id)
+        model.importPDF(source)
+        model.importPDF(source) // Duplicate action while importing must not import twice.
+        await fulfillment(of: [done], timeout: 5)
+        XCTAssertEqual(model.navigationPath.count, 1)
+        XCTAssertNotEqual(model.navigationPath.first, document.id)
+        XCTAssertTrue(model.documents.contains { $0.id == model.navigationPath.first })
+        token.cancel()
+        model.navigationPath.removeAll() // Back to the library.
+        let failed = expectation(description: "Import failure reported")
+        let errorToken = model.$error.sink { if $0 != nil { failed.fulfill() } }
+        model.importPDF(temporary.appendingPathComponent("missing.pdf"))
+        await fulfillment(of: [failed], timeout: 5)
+        XCTAssertTrue(model.navigationPath.isEmpty)
+        errorToken.cancel()
+    }
+
+    func testImportedReaderAndImmediateReopenUseLatestMetadata() async throws {
+        let model = LibraryModel(repository: repository)
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+        let window = UIWindow(windowScene: scene)
+        window.rootViewController = UIHostingController(rootView: LibraryView(model: model))
+        window.makeKeyAndVisible()
+        defer { window.rootViewController = nil; window.isHidden = true }
+        model.importPDF(repository.sourceURL(for: document.id))
+        try await Task.sleep(nanoseconds: 700_000_000)
+        let id = try XCTUnwrap(model.navigationPath.first)
+        XCTAssertEqual(descendants(of: window, type: PDFView.self).first?.document?.pageCount, 2)
+        for _ in 0..<3 {
+            model.navigationPath.removeAll()
+            try await Task.sleep(nanoseconds: 400_000_000)
+            var latest = try repository.loadDocument(id: id)
+            latest.position = .init(page: 1) // The list deliberately still holds the earlier snapshot.
+            try repository.saveMetadata(latest)
+            model.navigationPath.append(id)
+            try await Task.sleep(nanoseconds: 600_000_000)
+            let reader = try XCTUnwrap(descendants(of: window, type: PDFView.self).first)
+            let page = try XCTUnwrap(reader.currentPage)
+            XCTAssertEqual(reader.document?.index(for: page), 1)
+        }
+        model.navigationPath.removeAll()
+        try await Task.sleep(nanoseconds: 400_000_000)
+        await withCheckedContinuation { continuation in model.persistence.async { continuation.resume() } }
+    }
+
+    func testPositionIsNotCapturedUntilPDFJoinsAWindow() async throws {
+        var latest = document!
+        latest.position = .init(page: 1)
+        try repository.saveMetadata(latest)
+        let session = await open()
+        let view = ReaderPDFView(frame: .zero)
+        view.autoScales = true
+        let coordinator = PDFReaderView.Coordinator(session: session)
+        view.pageOverlayViewProvider = coordinator
+        coordinator.attach(view)
+        coordinator.configure(document: session.pdf, mode: .continuous)
+        session.flush()
+        await waitFor(session) { !$0.hasUnsavedChanges && !$0.isSaving }
+        XCTAssertEqual(try repository.loadDocument(id: document.id).position, latest.position)
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+        let window = UIWindow(windowScene: scene)
+        let controller = UIViewController()
+        window.rootViewController = controller
+        controller.view.addSubview(view)
+        window.makeKeyAndVisible()
+        // SwiftUI supplies the representable's final frame after attaching it to the window.
+        view.frame = controller.view.bounds
+        view.setNeedsLayout()
+        view.layoutIfNeeded()
+        defer { coordinator.detach(); window.isHidden = true }
+        try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertGreaterThan(view.bounds.width, 0)
+        XCTAssertEqual(view.document?.index(for: try XCTUnwrap(view.currentPage)), 1,
+                       "Delayed layout: bounds=\(view.bounds), scale=\(view.scaleFactor)")
+        session.prepareToClose()
+        await waitFor(session) { !$0.hasUnsavedChanges && !$0.isSaving }
+    }
 }

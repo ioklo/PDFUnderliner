@@ -61,6 +61,7 @@ final class DocumentRepositoryTests: XCTestCase {
         let list = try repository.list()
         XCTAssertEqual(list.first, first)
         XCTAssertEqual(list.first?.position, .init(page: 1, x: 28.5, y: 150))
+        XCTAssertEqual(try repository.loadDocument(id: first.id), first)
     }
 
     func testCorruptAndMissingSidecarsAreNotReplacedOnRead() throws {

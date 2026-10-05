@@ -7,11 +7,17 @@ final class LibraryModel: ObservableObject {
     @Published var documents: [LibraryDocument] = []
     @Published var error: String?
     @Published var importing = false
+    @Published var navigationPath: [UUID] = []
     let repository: DocumentRepository?
     /// One queue is shared with the reader so a queued save always precedes deletion.
     let persistence = DispatchQueue(label: "PDFUnderliner.persistence", qos: .userInitiated)
 
-    init() {
+    init(repository suppliedRepository: DocumentRepository? = nil) {
+        if let suppliedRepository {
+            repository = suppliedRepository
+            refresh()
+            return
+        }
         do {
             let support = try FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
                                                      appropriateFor: nil, create: true)
@@ -37,7 +43,7 @@ final class LibraryModel: ObservableObject {
     }
 
     func importPDF(_ url: URL) {
-        guard let repository else { return }
+        guard let repository, !importing else { return }
         importing = true
         persistence.async { [weak self] in
             let accessing = url.startAccessingSecurityScopedResource()
@@ -53,7 +59,11 @@ final class LibraryModel: ObservableObject {
             DispatchQueue.main.async {
                 self?.importing = false
                 switch result {
-                case .success: self?.refresh()
+                case .success(let document):
+                    guard let self else { return }
+                    self.documents.removeAll { $0.id == document.id }
+                    self.documents.insert(document, at: 0)
+                    self.navigationPath.append(document.id)
                 case .failure(let error): self?.error = error.localizedDescription
                 }
             }

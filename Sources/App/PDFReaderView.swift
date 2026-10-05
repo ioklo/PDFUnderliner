@@ -39,6 +39,8 @@ struct PDFReaderView: UIViewRepresentable {
         private var observers: [NSObjectProtocol] = []
         private var appliedSettings: ToolSettings?
         private var appliedWritable: Bool?
+        private var detached = false
+        private var waitingForTransition = false
 
         /// Diagnostics for bounding overlay ownership while navigating large documents.
         var activeOverlayCount: Int { overlays.count }
@@ -59,7 +61,7 @@ struct PDFReaderView: UIViewRepresentable {
                 })
             // Public PDFKit APIs expose the current destination but no scroll-position delegate.
             positionTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
-                MainActor.assumeIsolated { self?.capturePosition() }
+                MainActor.assumeIsolated { self?.didLayout(); self?.capturePosition() }
             }
         }
 
@@ -67,8 +69,8 @@ struct PDFReaderView: UIViewRepresentable {
             guard let view, let document else { return }
             var layoutChanged = false
             if view.document !== document {
-                view.document = document
                 restorePosition = session.document.position
+                view.document = document
                 layoutChanged = true
             }
             if self.mode != mode {
@@ -87,23 +89,53 @@ struct PDFReaderView: UIViewRepresentable {
         }
 
         private func didLayout() {
-            guard let view else { return }
+            guard !detached, let view else { return }
             restrictNavigationTouches(in: view)
-            guard !restoring, let position = restorePosition, view.bounds.width > 0,
+            guard !restoring, !waitingForTransition, !session.isClosing,
+                  let position = restorePosition, view.window != nil,
+                  view.bounds.width > 0, view.bounds.height > 0,
                   let page = view.document?.page(at: position.page) else { return }
+            var responder: UIResponder? = view
+            while let candidate = responder, !(candidate is UIViewController) { responder = candidate.next }
+            if let transition = (responder as? UIViewController)?.transitionCoordinator, transition.isAnimated {
+                waitingForTransition = true
+                let registered = transition.animate(alongsideTransition: nil) { [weak self] _ in
+                    self?.waitingForTransition = false
+                    self?.didLayout()
+                }
+                if registered { return }
+                waitingForTransition = false
+            }
             restoring = true
             // Layout is deferred to avoid moving a destination before PDFKit sizes its pages.
             DispatchQueue.main.async { [weak self, weak view] in
-                guard let self, let view else { return }
+                guard let self, let view, !self.detached else { return }
+                view.layoutIfNeeded()
+                guard view.window != nil, let scroll = self.documentScrollView(in: view),
+                      scroll.contentSize.width > 0, scroll.contentSize.height > 0, view.scaleFactor > 0 else {
+                    self.restoring = false
+                    return
+                }
                 if self.mode == .continuous, let x = position.x, let y = position.y {
                     let point = CGPoint(x: x, y: y)
                     view.go(to: PDFDestination(page: page, at: point))
                     view.layoutIfNeeded()
                     self.alignViewport(to: point, on: page, in: view)
                 } else { view.go(to: page) }
-                self.restorePosition = nil
-                self.restoring = false
-                self.pageChanged()
+                let bounds = view.bounds
+                let scale = view.scaleFactor
+                let contentSize = scroll.contentSize
+                // Keep capture blocked through PDFKit's deferred layout and navigation notifications.
+                DispatchQueue.main.async { [weak self, weak view] in
+                    guard let self, let view, !self.detached else { return }
+                    self.restoring = false
+                    if view.bounds != bounds || view.scaleFactor != scale || scroll.contentSize != contentSize {
+                        self.didLayout()
+                        return
+                    }
+                    self.restorePosition = nil
+                    self.pageChanged()
+                }
             }
         }
 
@@ -131,7 +163,8 @@ struct PDFReaderView: UIViewRepresentable {
         }
 
         private func pageChanged() {
-            guard !restoring, let view, let page = view.currentPage, let document = view.document else { return }
+            guard !detached, !session.isClosing, !restoring, restorePosition == nil,
+                  let view, let page = view.currentPage, let document = view.document else { return }
             let index = document.index(for: page)
             guard index != NSNotFound else { return }
             session.selectPage(index)
@@ -139,7 +172,8 @@ struct PDFReaderView: UIViewRepresentable {
         }
 
         func capturePosition() {
-            guard !restoring, restorePosition == nil, let view, let document = view.document else { return }
+            guard !detached, !session.isClosing, !restoring, restorePosition == nil,
+                  let view, view.window != nil, let document = view.document else { return }
             let anchor = CGPoint(x: view.bounds.midX, y: view.bounds.minY + 1)
             guard let page = mode == .paged ? view.currentPage : view.page(for: anchor, nearest: true) else { return }
             let index = document.index(for: page)
@@ -156,9 +190,7 @@ struct PDFReaderView: UIViewRepresentable {
         private func alignViewport(to point: CGPoint, on page: PDFPage, in view: PDFView) {
             // Locate the containing scroll view through public UIView ancestry, without depending
             // on PDFKit's private class names. go(to:) supplies page loading; this corrects its anchor.
-            var ancestor = view.documentView?.superview
-            while let candidate = ancestor, !(candidate is UIScrollView) { ancestor = candidate.superview }
-            guard let scroll = ancestor as? UIScrollView else { return }
+            guard let scroll = documentScrollView(in: view) else { return }
             let target = scroll.convert(view.convert(point, from: page), from: view)
             let anchor = scroll.convert(CGPoint(x: view.bounds.midX, y: view.bounds.minY + 1), from: view)
             let inset = scroll.adjustedContentInset
@@ -168,6 +200,12 @@ struct PDFReaderView: UIViewRepresentable {
             let offset = CGPoint(x: min(maximum.x, max(minimum.x, scroll.contentOffset.x + target.x - anchor.x)),
                                  y: min(maximum.y, max(minimum.y, scroll.contentOffset.y + target.y - anchor.y)))
             scroll.setContentOffset(offset, animated: false)
+        }
+
+        private func documentScrollView(in view: PDFView) -> UIScrollView? {
+            var ancestor = view.documentView?.superview
+            while let candidate = ancestor, !(candidate is UIScrollView) { ancestor = candidate.superview }
+            return ancestor as? UIScrollView
         }
 
         func finishStrokes() { for overlay in overlays.values { overlay.finishStroke() } }
@@ -192,11 +230,12 @@ struct PDFReaderView: UIViewRepresentable {
             overlay.finishStroke()
             // PDFKit may deliver a late callback for an old overlay after rebuilding its layout.
             if overlays[overlay.page] === overlay { overlays.removeValue(forKey: overlay.page) }
-            session.flush()
+            session.flush(captureReadingPosition: false)
         }
 
         func detach() {
-            session.flush()
+            detached = true
+            session.flush(captureReadingPosition: false)
             positionTimer?.invalidate()
             positionTimer = nil
             observers.forEach(NotificationCenter.default.removeObserver)
@@ -216,18 +255,21 @@ final class ReaderPDFView: PDFView {
         super.layoutSubviews()
         onLayout?()
     }
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        onLayout?()
+    }
 }
 
 @MainActor
 final class DrawingOverlay: UIView, PKCanvasViewDelegate {
     let page: Int
-    let canvas = PKCanvasView()
+    private(set) var canvas = PKCanvasView()
     private let pageSize: CGSize
     private weak var session: ReaderSession?
     private var beforeStroke: PKDrawing?
     private var settlement: DispatchWorkItem?
     private var drawingActive = false
-    private var applyingDrawing = false
 
     init(page: Int, size: CGSize, session: ReaderSession) {
         self.page = page
@@ -236,6 +278,12 @@ final class DrawingOverlay: UIView, PKCanvasViewDelegate {
         super.init(frame: CGRect(origin: .zero, size: size))
         backgroundColor = .clear
         clipsToBounds = true
+        canvas = makeCanvas(drawing: session.drawing(for: page))
+        addSubview(canvas)
+    }
+
+    private func makeCanvas(drawing: PKDrawing) -> PKCanvasView {
+        let canvas = PKCanvasView()
         canvas.backgroundColor = .clear
         canvas.isOpaque = false
         canvas.drawingPolicy = .pencilOnly
@@ -246,11 +294,11 @@ final class DrawingOverlay: UIView, PKCanvasViewDelegate {
         canvas.minimumZoomScale = 1
         canvas.maximumZoomScale = 1
         canvas.contentInsetAdjustmentBehavior = .never
-        canvas.drawing = session.drawing(for: page)
-        canvas.tool = session.toolSettings.pencilTool
-        canvas.drawingGestureRecognizer.isEnabled = session.writable
+        canvas.drawing = drawing
+        canvas.tool = session?.toolSettings.pencilTool ?? ToolSettings().pencilTool
+        canvas.drawingGestureRecognizer.isEnabled = session?.writable ?? false
         canvas.delegate = self
-        addSubview(canvas)
+        return canvas
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -266,20 +314,30 @@ final class DrawingOverlay: UIView, PKCanvasViewDelegate {
     }
 
     func setDrawing(_ drawing: PKDrawing) {
-        applyingDrawing = true
-        canvas.drawing = drawing
-        applyingDrawing = false
+        settlement?.cancel()
+        settlement = nil
+        beforeStroke = nil
+        drawingActive = false
+        canvas.delegate = nil
+        canvas.drawingGestureRecognizer.isEnabled = false
+        canvas.removeFromSuperview()
+        // A fresh canvas discards PencilKit's pending pen samples and internal editing state.
+        canvas = makeCanvas(drawing: drawing)
+        addSubview(canvas)
+        setNeedsLayout()
+        layoutIfNeeded()
     }
 
     func canvasViewDidBeginUsingTool(_ canvasView: PKCanvasView) {
+        guard canvasView === canvas else { return }
         finishStroke()
         session?.selectPage(page)
-        beforeStroke = canvasView.drawing
+        beforeStroke = session?.drawing(for: page) ?? canvasView.drawing
         drawingActive = true
     }
 
     func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
-        guard !applyingDrawing else { return }
+        guard canvasView === canvas else { return }
         // Programmatic changes may notify asynchronously. Compare with the model to avoid a new edit.
         guard beforeStroke != nil || canvasView.drawing.dataRepresentation() != session?.drawing(for: page).dataRepresentation() else { return }
         session?.drawingChanged(canvasView.drawing, page: page)
@@ -287,6 +345,7 @@ final class DrawingOverlay: UIView, PKCanvasViewDelegate {
     }
 
     func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) {
+        guard canvasView === canvas else { return }
         drawingActive = false
         // PencilKit can deliver final pressure samples AFTER this callback.
         scheduleSettlement()

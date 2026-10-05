@@ -81,6 +81,16 @@ public final class DocumentRepository: @unchecked Sendable {
     public func annotationsURL(for id: UUID) -> URL { folder(for: id).appendingPathComponent("annotations.plist") }
     private func folder(for id: UUID) -> URL { root.appendingPathComponent(id.uuidString, isDirectory: true) }
 
+    public func loadDocument(id: UUID) throws -> LibraryDocument {
+        try synchronized {
+            let document = try PropertyListDecoder().decode(LibraryDocument.self,
+                from: Data(contentsOf: folder(for: id).appendingPathComponent("metadata.plist")))
+            guard document.id == id, document.pageCount > 0,
+                  (0..<document.pageCount).contains(document.position.page) else { throw RepositoryError.invalidDocument }
+            return document
+        }
+    }
+
     public func list() throws -> [LibraryDocument] {
         try synchronized {
             let folders = try FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)

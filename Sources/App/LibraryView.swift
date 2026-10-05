@@ -7,7 +7,7 @@ struct LibraryView: View {
     @State private var pendingDelete: LibraryDocument?
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $model.navigationPath) {
             Group {
                 if model.documents.isEmpty {
                     VStack(spacing: 20) {
@@ -21,11 +21,8 @@ struct LibraryView: View {
                 } else {
                     List {
                         ForEach(model.documents) { document in
-                            if let repository = model.repository {
-                                NavigationLink {
-                                    ReaderView(document: document, repository: repository, persistence: model.persistence)
-                                        .onDisappear { model.refresh() }
-                                } label: {
+                            if model.repository != nil {
+                                NavigationLink(value: document.id) {
                                     HStack(spacing: 14) {
                                         Image(systemName: "doc.richtext").font(.title).foregroundStyle(.tint)
                                         VStack(alignment: .leading, spacing: 5) {
@@ -45,6 +42,12 @@ struct LibraryView: View {
                 }
             }
             .navigationTitle("내 PDF")
+            .navigationDestination(for: UUID.self) { id in
+                if let repository = model.repository, let document = model.documents.first(where: { $0.id == id }) {
+                    ReaderView(document: document, repository: repository, persistence: model.persistence)
+                        .onDisappear { model.refresh() }
+                }
+            }
             .toolbar {
                 ToolbarItem(placement: .navigationBarTrailing) {
                     if model.importing { ProgressView() }

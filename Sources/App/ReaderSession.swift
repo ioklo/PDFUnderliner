@@ -10,6 +10,7 @@ final class ReaderSession: ObservableObject {
     @Published var readOnlyReason: String?
     @Published var saveError: String?
     @Published var isSaving = false
+    @Published private(set) var isClosing = false
     @Published var currentPage = 0
     @Published var canUndo = false
     @Published var canRedo = false
@@ -45,31 +46,41 @@ final class ReaderSession: ObservableObject {
         load()
     }
 
-    var writable: Bool { !loading && pdf != nil && readOnlyReason == nil }
+    var writable: Bool { !loading && pdf != nil && readOnlyReason == nil && !isClosing }
     var hasUnsavedChanges: Bool { generation != savedGeneration }
 
     private func load() {
         let document = document
         persistence.async { [self] in
-            let result = Result { () -> AnnotationFile in
-                let file = try repository.loadAnnotations(for: document)
-                // Validate every stored drawing before enabling edits. Never silently replace corrupt data.
-                for data in file.drawings.values { _ = try PKDrawing(data: data) }
-                return file
+            let result = Result { () -> (LibraryDocument, Result<AnnotationFile, Error>) in
+                let latest = try repository.loadDocument(id: document.id)
+                let annotations = Result { () -> AnnotationFile in
+                    let file = try repository.loadAnnotations(for: latest)
+                    for data in file.drawings.values { _ = try PKDrawing(data: data) }
+                    return file
+                }
+                return (latest, annotations)
             }
             DispatchQueue.main.async { [self] in
+                guard case .success(let (latest, annotations)) = result else {
+                    loading = false
+                    openError = "저장된 문서 정보를 열 수 없습니다."
+                    return
+                }
                 guard let loadedPDF = PDFDocument(url: repository.sourceURL(for: document.id)),
-                      loadedPDF.pageCount == document.pageCount, !loadedPDF.isLocked else {
+                      loadedPDF.pageCount == latest.pageCount, !loadedPDF.isLocked else {
                     loading = false
                     openError = "저장된 PDF를 열 수 없습니다."
                     return
                 }
-                pdf = loadedPDF
-                switch result {
+                self.document = latest
+                currentPage = latest.position.page
+                switch annotations {
                 case .success(let file): drawingData = file.drawings
                 case .failure(let error):
                     readOnlyReason = "그리기 기록을 불러오지 못했습니다. 기존 파일은 유지됩니다.\n\(error.localizedDescription)"
                 }
+                pdf = loadedPDF
                 loading = false
                 self.document.lastOpened = Date()
                 generation += 1
@@ -132,7 +143,7 @@ final class ReaderSession: ObservableObject {
     }
 
     func rememberPosition(_ position: ReadingPosition) {
-        guard position != document.position else { return }
+        guard !isClosing, position != document.position else { return }
         document.position = position
         generation += 1
         scheduleSave()
@@ -150,9 +161,19 @@ final class ReaderSession: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3, execute: item)
     }
 
-    func flush(background: Bool = false) {
+    func prepareToClose() {
+        guard !isClosing else { return }
         finishStrokes?()
         capturePosition?()
+        isClosing = true
+        flush(captureReadingPosition: false)
+    }
+
+    func cancelClosing() { isClosing = false }
+
+    func flush(background: Bool = false, captureReadingPosition: Bool = true) {
+        finishStrokes?()
+        if captureReadingPosition && !isClosing { capturePosition?() }
         scheduledSave?.cancel()
         if background, hasUnsavedChanges, backgroundTask == .invalid {
             backgroundTask = UIApplication.shared.beginBackgroundTask(withName: "Save drawings") { [weak self] in
@@ -176,7 +197,7 @@ final class ReaderSession: ObservableObject {
         let metadata = document
         let revision = generation
         let drawingRevision = annotationGeneration
-        let writeAnnotations = writable && drawingRevision != savedAnnotationGeneration
+        let writeAnnotations = readOnlyReason == nil && drawingRevision != savedAnnotationGeneration
         isSaving = true
         persistence.async { [self] in
             let result = Result {

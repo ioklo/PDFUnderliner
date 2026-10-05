@@ -60,18 +60,18 @@ struct ReaderView: View {
         .onChange(of: session.isSaving) { saving in
             if closing && !saving {
                 if session.saveError == nil && !session.hasUnsavedChanges { dismiss() }
-                else { closing = false }
+                else { closing = false; session.cancelClosing() }
             }
         }
-        .onDisappear { session.flush() }
+        .onDisappear { session.flush(captureReadingPosition: false) }
     }
 
     private func close() {
         closing = true
-        session.flush()
+        session.prepareToClose()
         if !session.isSaving {
             if !session.hasUnsavedChanges || session.openError != nil { dismiss() }
-            else { closing = false }
+            else { closing = false; session.cancelClosing() }
         }
     }
 
