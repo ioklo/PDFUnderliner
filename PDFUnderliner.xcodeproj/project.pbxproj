@@ -1,0 +1,372 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		2BF81994FE909D161486C78C /* Sources/App/PDFUnderlinerApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B4E0EA8680322BFCE82604F3 /* Sources/App/PDFUnderlinerApp.swift */; };
+		34EE5DA21199ED9B40CB72A4 /* Sources/App/ToolSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = E48723C96175003313EF8583 /* Sources/App/ToolSettings.swift */; };
+		7BB89AAB3995685872A23CD0 /* Tests/AppTests/ReaderSessionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B77974A5441BB44BA06A9F1B /* Tests/AppTests/ReaderSessionTests.swift */; };
+		7C8B2D2F59EE7537AEDB6D27 /* Sources/App/LibraryModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 96724559E28CB1FD06609CAC /* Sources/App/LibraryModel.swift */; };
+		A0326D29E2FE0E23C1EB0E1E /* Sources/App/LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F9BA4A6366F137B5F9B14353 /* Sources/App/LibraryView.swift */; };
+		D13B59360AA19CF17B8BB932 /* Sources/App/ReaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A99415FC16ED4FE0439B034 /* Sources/App/ReaderView.swift */; };
+		D3778458E3BA59270680051C /* Sources/Core/DocumentRepository.swift in Sources */ = {isa = PBXBuildFile; fileRef = 647B1F4CC42C6F9D7C4EAB51 /* Sources/Core/DocumentRepository.swift */; };
+		D5315BF402505E298FE6BD53 /* Sources/App/ReaderSession.swift in Sources */ = {isa = PBXBuildFile; fileRef = D426BA7CD017D7990311E39E /* Sources/App/ReaderSession.swift */; };
+		F5B5E4D37126370FA6D32771 /* Sources/App/PDFReaderView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 460696ECB09BEA3F831A908A /* Sources/App/PDFReaderView.swift */; };
+		FB90684E69A6C96ED866993E /* Sources/App/Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B2B4367B873474FE1C68712A /* Sources/App/Assets.xcassets */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		F5A429194A00232ACC3298B6 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 98F54143AB4E86B28C3AFEE0 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = F75109BEB4DD8800DA6B45F8;
+			remoteInfo = PDFUnderliner;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		1BDCCF10062BC847C2914E5C /* PDFUnderlinerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = PDFUnderlinerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		36992FD9EFCC35941EC8F506 /* PDFUnderliner.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; path = PDFUnderliner.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		460696ECB09BEA3F831A908A /* Sources/App/PDFReaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/App/PDFReaderView.swift; sourceTree = SOURCE_ROOT; };
+		647B1F4CC42C6F9D7C4EAB51 /* Sources/Core/DocumentRepository.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/Core/DocumentRepository.swift; sourceTree = SOURCE_ROOT; };
+		6A99415FC16ED4FE0439B034 /* Sources/App/ReaderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/App/ReaderView.swift; sourceTree = SOURCE_ROOT; };
+		96724559E28CB1FD06609CAC /* Sources/App/LibraryModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/App/LibraryModel.swift; sourceTree = SOURCE_ROOT; };
+		B2B4367B873474FE1C68712A /* Sources/App/Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Sources/App/Assets.xcassets; sourceTree = SOURCE_ROOT; };
+		B4E0EA8680322BFCE82604F3 /* Sources/App/PDFUnderlinerApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/App/PDFUnderlinerApp.swift; sourceTree = SOURCE_ROOT; };
+		B77974A5441BB44BA06A9F1B /* Tests/AppTests/ReaderSessionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Tests/AppTests/ReaderSessionTests.swift; sourceTree = SOURCE_ROOT; };
+		D426BA7CD017D7990311E39E /* Sources/App/ReaderSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/App/ReaderSession.swift; sourceTree = SOURCE_ROOT; };
+		E48723C96175003313EF8583 /* Sources/App/ToolSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/App/ToolSettings.swift; sourceTree = SOURCE_ROOT; };
+		F9BA4A6366F137B5F9B14353 /* Sources/App/LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Sources/App/LibraryView.swift; sourceTree = SOURCE_ROOT; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		156998F1D551F8233F560236 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		BD92572B49AC16A86614498D /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		8309DD304D804F9D7F6302F5 /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				B2B4367B873474FE1C68712A /* Sources/App/Assets.xcassets */,
+				96724559E28CB1FD06609CAC /* Sources/App/LibraryModel.swift */,
+				F9BA4A6366F137B5F9B14353 /* Sources/App/LibraryView.swift */,
+				460696ECB09BEA3F831A908A /* Sources/App/PDFReaderView.swift */,
+				B4E0EA8680322BFCE82604F3 /* Sources/App/PDFUnderlinerApp.swift */,
+				D426BA7CD017D7990311E39E /* Sources/App/ReaderSession.swift */,
+				6A99415FC16ED4FE0439B034 /* Sources/App/ReaderView.swift */,
+				E48723C96175003313EF8583 /* Sources/App/ToolSettings.swift */,
+				647B1F4CC42C6F9D7C4EAB51 /* Sources/Core/DocumentRepository.swift */,
+			);
+			name = Sources;
+			sourceTree = "<group>";
+		};
+		870B3294C0CBD48AF6BBCC1B = {
+			isa = PBXGroup;
+			children = (
+				8309DD304D804F9D7F6302F5 /* Sources */,
+				A619C04D8A87AB070162A099 /* Tests */,
+				FBDC4F23F93125BBEEAE800C /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		A619C04D8A87AB070162A099 /* Tests */ = {
+			isa = PBXGroup;
+			children = (
+				B77974A5441BB44BA06A9F1B /* Tests/AppTests/ReaderSessionTests.swift */,
+			);
+			name = Tests;
+			sourceTree = "<group>";
+		};
+		FBDC4F23F93125BBEEAE800C /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				36992FD9EFCC35941EC8F506 /* PDFUnderliner.app */,
+				1BDCCF10062BC847C2914E5C /* PDFUnderlinerTests.xctest */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		B2BFE0D3C68337315431B2F3 /* PDFUnderlinerTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 52AD4600EC3994E0CD3216B8 /* Build configuration list for PBXNativeTarget "PDFUnderlinerTests" */;
+			buildPhases = (
+				73449B7401E2150CE31884A3 /* Sources */,
+				156998F1D551F8233F560236 /* Frameworks */,
+				7AB1BC06231813FA800FC177 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				DE58E2B17C19600779694943 /* PBXTargetDependency */,
+			);
+			name = PDFUnderlinerTests;
+			productName = PDFUnderlinerTests;
+			productReference = 1BDCCF10062BC847C2914E5C /* PDFUnderlinerTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+		F75109BEB4DD8800DA6B45F8 /* PDFUnderliner */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4867F1BF372A84237FA0A5A7 /* Build configuration list for PBXNativeTarget "PDFUnderliner" */;
+			buildPhases = (
+				949D493B91791558E87BC5D7 /* Sources */,
+				BD92572B49AC16A86614498D /* Frameworks */,
+				8ECC8B5D05B79F879ACDF1A2 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = PDFUnderliner;
+			productName = PDFUnderliner;
+			productReference = 36992FD9EFCC35941EC8F506 /* PDFUnderliner.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		98F54143AB4E86B28C3AFEE0 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				LastSwiftUpdateCheck = 1600;
+				LastUpgradeCheck = 1600;
+			};
+			buildConfigurationList = 640DC9EFD529235A8D9E2727 /* Build configuration list for PBXProject "PDFUnderliner" */;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = ko;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				ko,
+				en,
+				Base,
+			);
+			mainGroup = 870B3294C0CBD48AF6BBCC1B;
+			productRefGroup = FBDC4F23F93125BBEEAE800C /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				F75109BEB4DD8800DA6B45F8 /* PDFUnderliner */,
+				B2BFE0D3C68337315431B2F3 /* PDFUnderlinerTests */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		7AB1BC06231813FA800FC177 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		8ECC8B5D05B79F879ACDF1A2 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FB90684E69A6C96ED866993E /* Sources/App/Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		73449B7401E2150CE31884A3 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7BB89AAB3995685872A23CD0 /* Tests/AppTests/ReaderSessionTests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		949D493B91791558E87BC5D7 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7C8B2D2F59EE7537AEDB6D27 /* Sources/App/LibraryModel.swift in Sources */,
+				A0326D29E2FE0E23C1EB0E1E /* Sources/App/LibraryView.swift in Sources */,
+				F5B5E4D37126370FA6D32771 /* Sources/App/PDFReaderView.swift in Sources */,
+				2BF81994FE909D161486C78C /* Sources/App/PDFUnderlinerApp.swift in Sources */,
+				D5315BF402505E298FE6BD53 /* Sources/App/ReaderSession.swift in Sources */,
+				D13B59360AA19CF17B8BB932 /* Sources/App/ReaderView.swift in Sources */,
+				34EE5DA21199ED9B40CB72A4 /* Sources/App/ToolSettings.swift in Sources */,
+				D3778458E3BA59270680051C /* Sources/Core/DocumentRepository.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		DE58E2B17C19600779694943 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = F75109BEB4DD8800DA6B45F8 /* PDFUnderliner */;
+			targetProxy = F5A429194A00232ACC3298B6 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		00F209874A1F7309F6DCEAA7 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				SDKROOT = iphoneos;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		04B042A5E7A3FDC0670ED689 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.personal.PDFUnderlinerTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 2;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/PDFUnderliner.app/PDFUnderliner";
+			};
+			name = Release;
+		};
+		DF53765BF9D03B65CB04A4C8 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.personal.PDFUnderlinerTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 2;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/PDFUnderliner.app/PDFUnderliner";
+			};
+			name = Debug;
+		};
+		ED8772ADEC3A6C25161BC957 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		F72D4F08E84CA4C7F809A7CF /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2L69LFSF6S;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "줄긋기";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.books";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.personal.PDFUnderliner;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 2;
+			};
+			name = Release;
+		};
+		F8975E934DA2067E0E497395 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				DEVELOPMENT_TEAM = 2L69LFSF6S;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "줄긋기";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.books";
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.personal.PDFUnderliner;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 2;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		4867F1BF372A84237FA0A5A7 /* Build configuration list for PBXNativeTarget "PDFUnderliner" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F8975E934DA2067E0E497395 /* Debug */,
+				F72D4F08E84CA4C7F809A7CF /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		52AD4600EC3994E0CD3216B8 /* Build configuration list for PBXNativeTarget "PDFUnderlinerTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				DF53765BF9D03B65CB04A4C8 /* Debug */,
+				04B042A5E7A3FDC0670ED689 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		640DC9EFD529235A8D9E2727 /* Build configuration list for PBXProject "PDFUnderliner" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				ED8772ADEC3A6C25161BC957 /* Debug */,
+				00F209874A1F7309F6DCEAA7 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+/* End XCConfigurationList section */
+	};
+	rootObject = 98F54143AB4E86B28C3AFEE0 /* Project object */;
+}
