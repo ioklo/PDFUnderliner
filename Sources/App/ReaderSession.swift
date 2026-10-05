@@ -2,10 +2,13 @@ import SwiftUI
 import PDFKit
 import PencilKit
 
+enum HistoryDirection { case undo, redo }
+
 @MainActor
 final class ReaderSession: ObservableObject {
     @Published var pdf: PDFDocument?
     @Published var loading = true
+    @Published var positionRestored = false
     @Published var openError: String?
     @Published var readOnlyReason: String?
     @Published var saveError: String?
@@ -31,10 +34,13 @@ final class ReaderSession: ObservableObject {
     private var annotationGeneration = 0
     private var savedAnnotationGeneration = 0
     private var scheduledSave: DispatchWorkItem?
+    private var historyRefreshScheduled = false
     private var backgroundTask: UIBackgroundTaskIdentifier = .invalid
 
     /// Coordinator hooks let undo update a mounted canvas without retaining offscreen views.
     var displayDrawing: ((Int, PKDrawing) -> Void)?
+    var performNativeHistory: ((Int, HistoryDirection) -> Void)?
+    var nativeHistoryAvailability: ((Int) -> (undo: Bool, redo: Bool))?
     var finishStrokes: (() -> Void)?
     var capturePosition: (() -> Void)?
 
@@ -105,6 +111,7 @@ final class ReaderSession: ObservableObject {
 
     func commitHistory(before: PKDrawing, after: PKDrawing, page: Int) {
         guard writable, before.dataRepresentation() != after.dataRepresentation() else { return }
+        if nativeHistoryAvailability != nil { refreshUndoAvailability(); return }
         var history = histories[page] ?? History()
         history.undo.append(before)
         // Bounded per-page history keeps repeated strokes practical on iPad mini 5.
@@ -115,7 +122,13 @@ final class ReaderSession: ObservableObject {
     }
 
     func undo() {
+        guard writable else { return }
         finishStrokes?()
+        if let performNativeHistory {
+            performNativeHistory(currentPage, .undo)
+            refreshUndoAvailability()
+            return
+        }
         var history = histories[currentPage] ?? History()
         guard let previous = history.undo.popLast() else { return }
         history.redo.append(drawing(for: currentPage))
@@ -126,7 +139,13 @@ final class ReaderSession: ObservableObject {
     }
 
     func redo() {
+        guard writable else { return }
         finishStrokes?()
+        if let performNativeHistory {
+            performNativeHistory(currentPage, .redo)
+            refreshUndoAvailability()
+            return
+        }
         var history = histories[currentPage] ?? History()
         guard let next = history.redo.popLast() else { return }
         history.undo.append(drawing(for: currentPage))
@@ -149,7 +168,25 @@ final class ReaderSession: ObservableObject {
         scheduleSave()
     }
 
+    func refreshUndoAvailability() {
+        // PDFKit can retire overlays during SwiftUI layout/dismantling. Publish toolbar changes
+        // outside that transaction rather than invalidating a graph that is being destroyed.
+        guard !historyRefreshScheduled else { return }
+        historyRefreshScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.historyRefreshScheduled = false
+            self.updateUndoAvailability()
+        }
+    }
+
     private func updateUndoAvailability() {
+        if let nativeHistoryAvailability {
+            let availability = nativeHistoryAvailability(currentPage)
+            if canUndo != availability.undo { canUndo = availability.undo }
+            if canRedo != availability.redo { canRedo = availability.redo }
+            return
+        }
         canUndo = !(histories[currentPage]?.undo.isEmpty ?? true)
         canRedo = !(histories[currentPage]?.redo.isEmpty ?? true)
     }

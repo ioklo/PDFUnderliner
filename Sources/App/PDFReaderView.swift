@@ -1,6 +1,7 @@
 import SwiftUI
 import PDFKit
 import PencilKit
+import OSLog
 
 struct PDFReaderView: UIViewRepresentable {
     @ObservedObject var session: ReaderSession
@@ -50,7 +51,12 @@ struct PDFReaderView: UIViewRepresentable {
         func attach(_ view: ReaderPDFView) {
             self.view = view
             view.onLayout = { [weak self] in self?.didLayout() }
-            session.displayDrawing = { [weak self] page, drawing in self?.overlays[page]?.setDrawing(drawing) }
+            session.performNativeHistory = { [weak self] page, direction in
+                self?.overlays[page]?.performNativeHistory(direction)
+            }
+            session.nativeHistoryAvailability = { [weak self] page in
+                self?.overlays[page]?.historyAvailability ?? (false, false)
+            }
             session.finishStrokes = { [weak self] in self?.finishStrokes() }
             session.capturePosition = { [weak self] in self?.capturePosition() }
             observers.append(NotificationCenter.default.addObserver(forName: .PDFViewPageChanged,
@@ -134,6 +140,7 @@ struct PDFReaderView: UIViewRepresentable {
                         return
                     }
                     self.restorePosition = nil
+                    self.session.positionRestored = true
                     self.pageChanged()
                 }
             }
@@ -217,6 +224,7 @@ struct PDFReaderView: UIViewRepresentable {
             if let existing = overlays[index] { return existing }
             let overlay = DrawingOverlay(page: index, size: page.bounds(for: .cropBox).size, session: session)
             overlays[index] = overlay
+            DispatchQueue.main.async { [weak self] in self?.session.refreshUndoAvailability() }
             return overlay
         }
 
@@ -227,9 +235,10 @@ struct PDFReaderView: UIViewRepresentable {
 
         func pdfView(_ pdfView: PDFView, willEndDisplayingOverlayView overlayView: UIView, for page: PDFPage) {
             guard let overlay = overlayView as? DrawingOverlay else { return }
-            overlay.finishStroke()
+            overlay.retire()
             // PDFKit may deliver a late callback for an old overlay after rebuilding its layout.
             if overlays[overlay.page] === overlay { overlays.removeValue(forKey: overlay.page) }
+            session.refreshUndoAvailability()
             session.flush(captureReadingPosition: false)
         }
 
@@ -240,8 +249,11 @@ struct PDFReaderView: UIViewRepresentable {
             positionTimer = nil
             observers.forEach(NotificationCenter.default.removeObserver)
             observers.removeAll()
+            overlays.values.forEach { $0.retire() }
             overlays.removeAll()
             session.displayDrawing = nil
+            session.performNativeHistory = nil
+            session.nativeHistoryAvailability = nil
             session.finishStrokes = nil
             session.capturePosition = nil
             view?.onLayout = nil
@@ -262,14 +274,25 @@ final class ReaderPDFView: PDFView {
 }
 
 @MainActor
+final class ReaderCanvasView: PKCanvasView {
+    // A window's shared manager would mix strokes from different PDF pages.
+    let pageUndoManager = UndoManager()
+    override var undoManager: UndoManager? { pageUndoManager }
+}
+
+@MainActor
 final class DrawingOverlay: UIView, PKCanvasViewDelegate {
     let page: Int
-    private(set) var canvas = PKCanvasView()
+    let canvas = ReaderCanvasView()
     private let pageSize: CGSize
     private weak var session: ReaderSession?
     private var beforeStroke: PKDrawing?
     private var settlement: DispatchWorkItem?
     private var drawingActive = false
+    private var undoObservers: [NSObjectProtocol] = []
+    private static let logger = Logger(subsystem: "PDFUnderliner", category: "PencilUndo")
+    private var retired = false
+    private var performingHistory = false
 
     init(page: Int, size: CGSize, session: ReaderSession) {
         self.page = page
@@ -278,12 +301,22 @@ final class DrawingOverlay: UIView, PKCanvasViewDelegate {
         super.init(frame: CGRect(origin: .zero, size: size))
         backgroundColor = .clear
         clipsToBounds = true
-        canvas = makeCanvas(drawing: session.drawing(for: page))
+        configureCanvas(drawing: session.drawing(for: page))
         addSubview(canvas)
+        for name in [Notification.Name.NSUndoManagerDidCloseUndoGroup, Notification.Name.NSUndoManagerDidUndoChange,
+                     Notification.Name.NSUndoManagerDidRedoChange] {
+            undoObservers.append(NotificationCenter.default.addObserver(forName: name,
+                object: canvas.pageUndoManager, queue: .main) { [weak self] _ in
+                    DispatchQueue.main.async { [weak self] in
+                        guard let self, !self.retired else { return }
+                        self.session?.refreshUndoAvailability()
+                    }
+                })
+        }
     }
 
-    private func makeCanvas(drawing: PKDrawing) -> PKCanvasView {
-        let canvas = PKCanvasView()
+    private func configureCanvas(drawing: PKDrawing) {
+        canvas.pageUndoManager.levelsOfUndo = 20
         canvas.backgroundColor = .clear
         canvas.isOpaque = false
         canvas.drawingPolicy = .pencilOnly
@@ -294,11 +327,12 @@ final class DrawingOverlay: UIView, PKCanvasViewDelegate {
         canvas.minimumZoomScale = 1
         canvas.maximumZoomScale = 1
         canvas.contentInsetAdjustmentBehavior = .never
+        canvas.pageUndoManager.disableUndoRegistration()
         canvas.drawing = drawing
+        canvas.pageUndoManager.enableUndoRegistration()
         canvas.tool = session?.toolSettings.pencilTool ?? ToolSettings().pencilTool
         canvas.drawingGestureRecognizer.isEnabled = session?.writable ?? false
         canvas.delegate = self
-        return canvas
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -313,39 +347,57 @@ final class DrawingOverlay: UIView, PKCanvasViewDelegate {
         canvas.contentSize = pageSize
     }
 
-    func setDrawing(_ drawing: PKDrawing) {
-        settlement?.cancel()
-        settlement = nil
-        beforeStroke = nil
-        drawingActive = false
+    var historyAvailability: (undo: Bool, redo: Bool) {
+        guard !retired, !drawingActive, settlement == nil else { return (false, false) }
+        return (canvas.pageUndoManager.canUndo, canvas.pageUndoManager.canRedo)
+    }
+
+    func performNativeHistory(_ direction: HistoryDirection) {
+        guard !retired, session?.writable == true else { return }
+        finishStroke()
+        let manager = canvas.pageUndoManager
+        guard direction == .undo ? manager.canUndo : manager.canRedo else { return }
+        let before = canvas.drawing.strokes.count
+        performingHistory = true
+        defer { performingHistory = false }
+        if direction == .undo { manager.undo() } else { manager.redo() }
+        // Read the result; never assign a model snapshot back into the live editor.
+        session?.drawingChanged(canvas.drawing, page: page)
+        session?.refreshUndoAvailability()
+        Self.logger.notice("native history page=\(self.page) undo=\(direction == .undo) strokes=\(before)->\(self.canvas.drawing.strokes.count)")
+    }
+
+    func retire() {
+        finishStroke()
+        retired = true
         canvas.delegate = nil
         canvas.drawingGestureRecognizer.isEnabled = false
-        canvas.removeFromSuperview()
-        // A fresh canvas discards PencilKit's pending pen samples and internal editing state.
-        canvas = makeCanvas(drawing: drawing)
-        addSubview(canvas)
-        setNeedsLayout()
-        layoutIfNeeded()
+        canvas.pageUndoManager.removeAllActions()
+        undoObservers.forEach(NotificationCenter.default.removeObserver)
+        undoObservers.removeAll()
     }
 
     func canvasViewDidBeginUsingTool(_ canvasView: PKCanvasView) {
-        guard canvasView === canvas else { return }
+        guard !retired, canvasView === canvas else { return }
         finishStroke()
         session?.selectPage(page)
         beforeStroke = session?.drawing(for: page) ?? canvasView.drawing
         drawingActive = true
+        session?.refreshUndoAvailability()
+        Self.logger.debug("begin page=\(self.page) strokes=\(canvasView.drawing.strokes.count)")
     }
 
     func canvasViewDrawingDidChange(_ canvasView: PKCanvasView) {
-        guard canvasView === canvas else { return }
+        guard !retired, canvasView === canvas else { return }
         // Programmatic changes may notify asynchronously. Compare with the model to avoid a new edit.
         guard beforeStroke != nil || canvasView.drawing.dataRepresentation() != session?.drawing(for: page).dataRepresentation() else { return }
+        Self.logger.debug("change page=\(self.page) active=\(self.drawingActive) strokes=\(canvasView.drawing.strokes.count)")
         session?.drawingChanged(canvasView.drawing, page: page)
-        if !drawingActive { scheduleSettlement() }
+        if !drawingActive && !performingHistory { scheduleSettlement() }
     }
 
     func canvasViewDidEndUsingTool(_ canvasView: PKCanvasView) {
-        guard canvasView === canvas else { return }
+        guard !retired, canvasView === canvas else { return }
         drawingActive = false
         // PencilKit can deliver final pressure samples AFTER this callback.
         scheduleSettlement()
@@ -355,12 +407,14 @@ final class DrawingOverlay: UIView, PKCanvasViewDelegate {
         settlement?.cancel()
         let work = DispatchWorkItem { [weak self] in self?.finishStroke() }
         settlement = work
+        session?.refreshUndoAvailability()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12, execute: work)
     }
 
     func finishStroke() {
         settlement?.cancel()
         settlement = nil
+        defer { session?.refreshUndoAvailability() }
         guard let before = beforeStroke else { return }
         beforeStroke = nil
         drawingActive = false

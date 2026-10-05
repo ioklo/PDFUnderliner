@@ -22,7 +22,10 @@ struct ReaderView: View {
             }
             ZStack {
                 if session.pdf != nil { PDFReaderView(session: session) }
-                if session.loading { ProgressView("PDF 여는 중…") }
+                if session.loading || (session.pdf != nil && !session.positionRestored) {
+                    Color(uiColor: .secondarySystemBackground)
+                    ProgressView("PDF 여는 중…")
+                }
                 if let error = session.openError {
                     VStack(spacing: 12) {
                         Image(systemName: "exclamationmark.triangle").font(.largeTitle)

@@ -353,41 +353,57 @@ final class ReaderSessionTests: XCTestCase {
         return result
     }
 
-    func testUndoThenDrawingIgnoresOldCanvasCallbacksForPenAndMarker() async throws {
+    // Simulator tests register UndoManager actions to exercise our routing. Real PencilKit
+    // pressure samples and native stroke registration still require Apple Pencil on a device.
+    private func nativeEdit(_ drawing: PKDrawing, on canvas: ReaderCanvasView) {
+        let previous = canvas.drawing
+        canvas.pageUndoManager.registerUndo(withTarget: canvas) { [weak self] target in
+            self?.nativeEdit(previous, on: target)
+        }
+        canvas.drawing = drawing
+    }
+
+    private func simulateStroke(_ drawing: PKDrawing, overlay: DrawingOverlay) {
+        let canvas = overlay.canvas
+        overlay.canvasViewDidBeginUsingTool(canvas)
+        // These synthetic strokes run in one event-loop turn. Explicit grouping models
+        // separate Pencil gestures rather than merging every test stroke into that event.
+        canvas.pageUndoManager.groupsByEvent = false
+        canvas.pageUndoManager.beginUndoGrouping()
+        nativeEdit(drawing, on: canvas)
+        canvas.pageUndoManager.endUndoGrouping()
+        overlay.canvasViewDrawingDidChange(canvas)
+        overlay.canvasViewDidEndUsingTool(canvas)
+        overlay.finishStroke()
+    }
+
+    func testNativeUndoThenNewDrawingKeepsCanvasAndClearsRedoForPenAndMarker() async throws {
         for ink in [PKInk.InkType.pen, .marker] {
             let session = await open()
             let overlay = DrawingOverlay(page: 0, size: CGSize(width: 400, height: 600), session: session)
-            session.displayDrawing = { _, drawing in overlay.setDrawing(drawing) }
+            session.performNativeHistory = { _, direction in overlay.performNativeHistory(direction) }
+            session.nativeHistoryAvailability = { _ in overlay.historyAvailability }
             session.finishStrokes = { overlay.finishStroke() }
-            let initial = session.drawing(for: 0).strokes.count
+            let canvas = overlay.canvas
+            let initial = canvas.drawing.strokes.count
             for color in [UIColor.red, .blue, .green] {
-                overlay.canvasViewDidBeginUsingTool(overlay.canvas)
-                overlay.canvas.drawing = PKDrawing(strokes: overlay.canvas.drawing.strokes + stroke(color: color, ink: ink).strokes)
-                overlay.canvasViewDrawingDidChange(overlay.canvas)
-                overlay.canvasViewDidEndUsingTool(overlay.canvas)
-                overlay.finishStroke()
+                simulateStroke(PKDrawing(strokes: canvas.drawing.strokes + stroke(color: color, ink: ink).strokes), overlay: overlay)
             }
-            let old = overlay.canvas
+            await waitFor(session) { $0.canUndo }
             session.undo()
-            XCTAssertFalse(old === overlay.canvas)
-            XCTAssertNil(old.delegate)
+            XCTAssertTrue(canvas === overlay.canvas)
+            XCTAssertEqual(canvas.drawing.strokes.count, initial + 2)
             XCTAssertEqual(session.drawing(for: 0).strokes.count, initial + 2)
-            // A late pen pressure callback and even a begin/end callback from the retired canvas.
-            overlay.canvasViewDrawingDidChange(old)
-            overlay.canvasViewDidBeginUsingTool(old)
-            overlay.canvasViewDidEndUsingTool(old)
-            XCTAssertEqual(session.drawing(for: 0).strokes.count, initial + 2)
-            let current = overlay.canvas
-            overlay.canvasViewDidBeginUsingTool(current)
-            current.drawing = PKDrawing(strokes: current.drawing.strokes + stroke(color: .purple, ink: ink).strokes)
-            overlay.canvasViewDrawingDidChange(current)
-            overlay.canvasViewDidEndUsingTool(current)
-            overlay.finishStroke()
+            await waitFor(session) { $0.canRedo }
+            // A delayed notification reads the native editor's current drawing, not an app snapshot.
+            overlay.canvasViewDrawingDidChange(canvas)
+            simulateStroke(PKDrawing(strokes: canvas.drawing.strokes + stroke(color: .purple, ink: ink).strokes), overlay: overlay)
+            await waitFor(session) { !$0.canRedo }
             XCTAssertEqual(session.drawing(for: 0).strokes.count, initial + 3)
-            XCTAssertFalse(session.canRedo)
             XCTAssertEqual(session.drawing(for: 0).strokes.last?.ink.color, UIColor.purple)
             session.undo()
             session.redo()
+            XCTAssertTrue(canvas === overlay.canvas)
             XCTAssertEqual(session.drawing(for: 0).strokes.count, initial + 3)
             session.flush()
             await waitFor(session) { !$0.hasUnsavedChanges && !$0.isSaving }
@@ -395,7 +411,9 @@ final class ReaderSessionTests: XCTestCase {
             XCTAssertEqual(reopened.drawing(for: 0).strokes.count, initial + 3)
             reopened.flush()
             await waitFor(reopened) { !$0.hasUnsavedChanges && !$0.isSaving }
-            session.displayDrawing = nil
+            overlay.retire()
+            session.performNativeHistory = nil
+            session.nativeHistoryAvailability = nil
             session.finishStrokes = nil
         }
     }
@@ -486,7 +504,13 @@ final class ReaderSessionTests: XCTestCase {
             latest.position = .init(page: 1) // The list deliberately still holds the earlier snapshot.
             try repository.saveMetadata(latest)
             model.navigationPath.append(id)
-            try await Task.sleep(nanoseconds: 600_000_000)
+            // Navigation animation and PDFKit layout run asynchronously, including a retry timer.
+            // Wait for the destination instead of assuming a fixed 600 ms on a loaded simulator.
+            for _ in 0..<20 {
+                if let reader = descendants(of: window, type: PDFView.self).first,
+                   let page = reader.currentPage, reader.document?.index(for: page) == 1 { break }
+                try await Task.sleep(nanoseconds: 100_000_000)
+            }
             let reader = try XCTUnwrap(descendants(of: window, type: PDFView.self).first)
             let page = try XCTUnwrap(reader.currentPage)
             XCTAssertEqual(reader.document?.index(for: page), 1)
@@ -501,6 +525,7 @@ final class ReaderSessionTests: XCTestCase {
         latest.position = .init(page: 1)
         try repository.saveMetadata(latest)
         let session = await open()
+        XCTAssertFalse(session.positionRestored)
         let view = ReaderPDFView(frame: .zero)
         view.autoScales = true
         let coordinator = PDFReaderView.Coordinator(session: session)
@@ -522,10 +547,79 @@ final class ReaderSessionTests: XCTestCase {
         view.layoutIfNeeded()
         defer { coordinator.detach(); window.isHidden = true }
         try await Task.sleep(nanoseconds: 300_000_000)
+        XCTAssertTrue(session.positionRestored)
         XCTAssertGreaterThan(view.bounds.width, 0)
         XCTAssertEqual(view.document?.index(for: try XCTUnwrap(view.currentPage)), 1,
                        "Delayed layout: bounds=\(view.bounds), scale=\(view.scaleFactor)")
         session.prepareToClose()
         await waitFor(session) { !$0.hasUnsavedChanges && !$0.isSaving }
+    }
+
+    func testMountedPDFUsesNativeHistoryWithoutCanvasReplacementOrSnapshotFallback() async throws {
+        let session = await open()
+        let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+        let window = UIWindow(windowScene: scene)
+        let controller = UIViewController()
+        window.rootViewController = controller
+        window.makeKeyAndVisible()
+        let view = ReaderPDFView(frame: controller.view.bounds)
+        view.autoScales = true
+        controller.view.addSubview(view)
+        let coordinator = PDFReaderView.Coordinator(session: session)
+        view.pageOverlayViewProvider = coordinator
+        coordinator.attach(view)
+        defer { coordinator.detach(); window.isHidden = true }
+        coordinator.configure(document: session.pdf, mode: .continuous)
+        try await Task.sleep(nanoseconds: 300_000_000)
+        let overlay = try XCTUnwrap(descendants(of: view, type: DrawingOverlay.self).first { $0.page == 0 })
+        let canvas = overlay.canvas
+        session.selectPage(0)
+        let first = stroke(color: .red)
+        simulateStroke(first, overlay: overlay)
+        simulateStroke(PKDrawing(strokes: first.strokes + stroke(color: .blue).strokes), overlay: overlay)
+        session.undo()
+        XCTAssertTrue(view.isUserInteractionEnabled)
+        XCTAssertTrue(canvas === overlay.canvas)
+        XCTAssertEqual(canvas.drawing.strokes.count, 1)
+        session.redo()
+        XCTAssertTrue(canvas === overlay.canvas)
+        XCTAssertEqual(canvas.drawing.strokes.count, 2)
+        canvas.pageUndoManager.removeAllActions()
+        session.refreshUndoAvailability()
+        await waitFor(session) { !$0.canUndo }
+        session.undo()
+        XCTAssertEqual(canvas.drawing.strokes.count, 2, "Missing native history must never restore an app snapshot")
+        XCTAssertEqual(session.drawing(for: 0).strokes.count, 2)
+        session.flush()
+        await waitFor(session) { !$0.hasUnsavedChanges && !$0.isSaving }
+    }
+
+    func testNativeHistoryIsPageLocalAndRetiredCanvasCallbacksAreIgnored() async throws {
+        let session = await open()
+        let first = DrawingOverlay(page: 0, size: CGSize(width: 400, height: 600), session: session)
+        let second = DrawingOverlay(page: 1, size: CGSize(width: 400, height: 600), session: session)
+        let overlays = [0: first, 1: second]
+        session.performNativeHistory = { page, direction in overlays[page]?.performNativeHistory(direction) }
+        session.nativeHistoryAvailability = { page in overlays[page]?.historyAvailability ?? (false, false) }
+        simulateStroke(stroke(color: .red), overlay: first)
+        simulateStroke(stroke(color: .blue), overlay: second)
+        session.selectPage(0)
+        session.undo()
+        XCTAssertTrue(session.drawing(for: 0).strokes.isEmpty)
+        XCTAssertEqual(session.drawing(for: 1).strokes.count, 1)
+        await waitFor(session) { $0.canRedo }
+        session.redo()
+        XCTAssertEqual(session.drawing(for: 0).strokes.count, 1)
+        first.retire()
+        first.canvas.drawing = PKDrawing()
+        first.canvasViewDrawingDidChange(first.canvas)
+        XCTAssertEqual(session.drawing(for: 0).strokes.count, 1)
+        session.refreshUndoAvailability()
+        await waitFor(session) { !$0.canUndo && !$0.canRedo }
+        second.retire()
+        session.flush()
+        await waitFor(session) { !$0.hasUnsavedChanges && !$0.isSaving }
+        session.performNativeHistory = nil
+        session.nativeHistoryAvailability = nil
     }
 }
